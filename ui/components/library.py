@@ -183,6 +183,4 @@ def get_stats_html():
         </div>
     </div>
     """
-
-
-    nose
+no se que hacer jj

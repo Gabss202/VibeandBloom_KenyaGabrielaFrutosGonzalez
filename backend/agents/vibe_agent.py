@@ -4,12 +4,10 @@ from dotenv import load_dotenv
 import base64
 
 load_dotenv()
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class VibeAgent:
-    def __init__(self):
-        self.model = client.models
-
     def detectar_desde_texto(self, texto: str) -> dict:
         prompt = f"""
         Eres un experto en emociones y literatura. Analiza este texto y detecta el vibe emocional.
@@ -21,7 +19,7 @@ class VibeAgent:
         GENEROS: [3 géneros literarios separados por comas]
         EXPLICACION: [una oración explicando por qué]
         """
-        response = self.model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
         return self._parsear_respuesta(response.text, "texto")
 
     def detectar_desde_imagen(self, imagen_bytes: bytes) -> dict:
@@ -35,10 +33,13 @@ class VibeAgent:
         GENEROS: [3 géneros literarios separados por comas]
         EXPLICACION: [una oración explicando por qué]
         """
-        response = self.model.generate_content([
-            {"mime_type": "image/jpeg", "data": imagen_base64},
-            prompt
-        ])
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=[
+                {"mime_type": "image/jpeg", "data": imagen_base64},
+                prompt
+            ]
+        )
         return self._parsear_respuesta(response.text, "imagen")
 
     def detectar_desde_cancion(self, nombre_cancion: str, artista: str = "") -> dict:
@@ -53,7 +54,7 @@ class VibeAgent:
         GENEROS: [3 géneros literarios separados por comas]
         EXPLICACION: [una oración explicando por qué]
         """
-        response = self.model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
         return self._parsear_respuesta(response.text, "cancion")
 
     def detectar_desde_video(self, url_youtube: str) -> dict:
@@ -68,7 +69,7 @@ class VibeAgent:
         GENEROS: [3 géneros literarios separados por comas]
         EXPLICACION: [una oración explicando por qué]
         """
-        response = self.model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
         return self._parsear_respuesta(response.text, "video")
 
     def _parsear_respuesta(self, texto: str, tipo: str) -> dict:

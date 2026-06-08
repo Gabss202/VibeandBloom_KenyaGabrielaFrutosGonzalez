@@ -10,7 +10,7 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 class LibrarianAgent:
     def __init__(self, db):
         self.db = db
-        self.model = client.models
+        # model set
 
     def guardar_libro(self, libro_data: dict) -> Libro:
         # Verificar si el libro ya existe en BD
@@ -131,7 +131,7 @@ class LibrarianAgent:
         Responde con UN mensaje corto (máximo 2 oraciones) celebrando su reseña
         y animándolo a seguir leyendo. Sé cálido y entusiasta.
         """
-        response = self.model.generate_content(prompt)
+        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
 
         return {
             "mensaje": f"Reseña {accion} exitosamente",

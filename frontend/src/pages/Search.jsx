@@ -27,8 +27,10 @@ const Search = () => {
   const [resultados, setResultados] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [mensajeGuardado, setMensajeGuardado] = useState('');
+  const [analisisVibe, setAnalisisVibe] = useState(null);
   const [libroSeleccionado, setLibroSeleccionado] = useState(null);
   const [vibeActivo, setVibeActivo] = useState(null);
+  const [estadosGuardados, setEstadosGuardados] = useState({});
 
   const token = localStorage.getItem('token');
   const headers = { Authorization: `Bearer ${token}` };
@@ -36,9 +38,17 @@ const Search = () => {
   const buscar = async (texto) => {
     setCargando(true);
     setResultados([]);
+    setAnalisisVibe(null);
     try {
       const res = await axios.post(`${API}/vibe/texto`, { texto }, { headers });
       setResultados(res.data.recomendaciones?.libros || []);
+      setAnalisisVibe({
+        vibe: res.data.vibe?.vibe,
+        tags: res.data.vibe?.tags || [],
+        explicacion: res.data.explicacion?.explicacion || res.data.recomendaciones?.explicacion || '',
+        inferencias: res.data.recomendaciones?.inferencias || [],
+        total: res.data.explicacion?.total_recomendaciones || res.data.recomendaciones?.libros?.length || 0,
+      });
     } catch (e) {
       console.error(e);
     }
@@ -58,8 +68,10 @@ const Search = () => {
 
   const agregarBiblioteca = async (libro, estado) => {
     try {
-      await axios.post(`${API}/biblioteca/agregar`, { libro, estado }, { headers });
-      setMensajeGuardado(`"${libro.titulo}" agregado`);
+      const res = await axios.post(`${API}/biblioteca/agregar`, { libro, estado }, { headers });
+      const mensaje = res.data?.mensaje || `"${libro.titulo}" agregado`;
+      setMensajeGuardado(res.data?.sugerencia ? `${mensaje}. ${res.data.sugerencia}` : mensaje);
+      setEstadosGuardados(prev => ({ ...prev, [libro.id]: estado }));
       setLibroSeleccionado(null);
       setTimeout(() => setMensajeGuardado(''), 3000);
     } catch (e) {
@@ -156,11 +168,43 @@ const Search = () => {
             <p style={{ fontWeight: 'bold', fontSize: '16px' }}>
               {vibeActivo ? `Vibe: ${vibeActivo}` : 'Resultados'}
             </p>
-            <button onClick={() => { setResultados([]); setVibeActivo(null); }} style={{
+            <button onClick={() => { setResultados([]); setVibeActivo(null); setAnalisisVibe(null); }} style={{
               background: 'none', border: 'none', color: 'var(--accent)',
               fontSize: '13px', cursor: 'pointer'
             }}>← Volver</button>
           </div>
+
+          {analisisVibe && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: '18px',
+              padding: '16px', marginBottom: '16px',
+              border: '1px solid var(--border)'
+            }}>
+              <p style={{ color: 'var(--accent)', fontWeight: 'bold', fontSize: '13px', marginBottom: '8px' }}>
+                🧠 Por qué estas recomendaciones
+              </p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.5', marginBottom: '10px' }}>
+                {analisisVibe.explicacion || 'El sistema detectó señales suficientes para ajustar géneros y priorizar libros afines.'}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                {analisisVibe.tags.map(tag => (
+                  <span key={tag} style={{
+                    background: 'var(--bg-modal)', color: 'var(--text-secondary)',
+                    padding: '4px 10px', borderRadius: '999px', fontSize: '12px'
+                  }}>{tag}</span>
+                ))}
+              </div>
+              {analisisVibe.inferencias.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {analisisVibe.inferencias.map(inferencia => (
+                    <p key={inferencia} style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+                      • {inferencia}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {resultados.map(libro => (
             <div key={libro.id} onClick={() => setLibroSeleccionado(libro)} style={{
@@ -182,6 +226,11 @@ const Search = () => {
               <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px', lineHeight: '1.3' }}>{libro.titulo}</p>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '8px' }}>{libro.autor}</p>
+                {estadosGuardados[libro.id] && (
+                  <p style={{ color: 'var(--accent)', fontSize: '11px', marginBottom: '8px', fontWeight: 'bold' }}>
+                    Guardado como: {estadosGuardados[libro.id].replace('_', ' ')}
+                  </p>
+                )}
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                   <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'quiero_leer'); }} style={btnSmall}>
                     🔖 Quiero leer
@@ -237,21 +286,15 @@ const Search = () => {
               {libroSeleccionado.descripcion || 'Sin descripción disponible.'}
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'quiero_leer')} style={{
-                flex: 1, background: 'var(--bg-card)', color: 'var(--text-primary)',
-                border: '1px solid var(--border)', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer'
-              }}>🔖 Quiero leer</button>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leyendo')} style={{
-                flex: 1, background: 'var(--bg-card)', color: 'var(--text-primary)',
-                border: '1px solid var(--border)', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer'
-              }}>📖 Leyendo</button>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leido')} style={{
-                flex: 1, background: 'var(--accent)', color: 'var(--bg-primary)',
-                border: 'none', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold'
-              }}>✅ Leído</button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'quiero_leer')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'quiero_leer')}>
+                🔖 Quiero leer
+              </button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leyendo')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'leyendo')}>
+                📖 Leyendo
+              </button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leido')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'leido', true)}>
+                ✅ Leído
+              </button>
             </div>
           </div>
         </div>
@@ -265,5 +308,17 @@ const btnSmall = {
   border: '1px solid var(--border)', borderRadius: '10px',
   padding: '6px 10px', fontSize: '12px', cursor: 'pointer'
 };
+
+const estadoBoton = (activo, primario = false) => ({
+  flex: 1,
+  background: activo ? 'var(--accent)' : (primario ? 'var(--accent)' : 'var(--bg-card)'),
+  color: activo ? 'var(--bg-primary)' : (primario ? 'var(--bg-primary)' : 'var(--text-primary)'),
+  border: activo || primario ? 'none' : '1px solid var(--border)',
+  borderRadius: '14px',
+  padding: '12px',
+  fontSize: '13px',
+  cursor: 'pointer',
+  fontWeight: activo || primario ? 'bold' : '500'
+});
 
 export default Search;

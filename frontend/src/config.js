@@ -1,2 +1,2 @@
-const API = 'https://fantastic-garbanzo-r47j5ppj6x6xf5w9-8000.app.github.dev';
+const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 export default API;

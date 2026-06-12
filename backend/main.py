@@ -72,6 +72,13 @@ class VibeCancion(BaseModel):
 class VibeVideo(BaseModel):
     url: str
 
+class ChatLibros(BaseModel):
+    mensaje: str
+
+class RecuperarPassword(BaseModel):
+    identificador: str
+    nueva_password: str
+
 def crear_token(data: dict):
     datos = data.copy()
     datos["exp"] = datetime.utcnow() + timedelta(hours=24)
@@ -106,11 +113,25 @@ def registro(datos: UsuarioRegistro, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    usuario = db.query(Usuario).filter(Usuario.username == form.username).first()
+    usuario = db.query(Usuario).filter(
+        (Usuario.username == form.username) | (Usuario.email == form.username)
+    ).first()
     if not usuario or not pwd_context.verify(form.password, usuario.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     token = crear_token({"sub": usuario.username})
     return {"access_token": token, "token_type": "bearer"}
+
+@app.post("/recuperar-password")
+def recuperar_password(datos: RecuperarPassword, db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(
+        (Usuario.username == datos.identificador) | (Usuario.email == datos.identificador)
+    ).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    usuario.password_hash = pwd_context.hash(datos.nueva_password)
+    db.commit()
+    return {"mensaje": "Contraseña actualizada correctamente"}
 
 # --- VIBE (Agente 1) ---
 @app.post("/vibe/texto")
@@ -209,6 +230,14 @@ def resumen_perfil(usuario=Depends(obtener_usuario_actual), db: Session = Depend
     try:
         supervisor = SupervisorAgent(db)
         return supervisor.resumen_usuario(usuario.id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/libros")
+def chat_libros(datos: ChatLibros, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    try:
+        supervisor = SupervisorAgent(db)
+        return supervisor.responder_chat_libros(usuario.id, datos.mensaje)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

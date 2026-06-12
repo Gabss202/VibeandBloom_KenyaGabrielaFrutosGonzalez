@@ -24,6 +24,7 @@ class Usuario(Base):
     fecha_registro = Column(DateTime, default=datetime.utcnow)
     biblioteca = relationship("Biblioteca", back_populates="usuario")
     reseñas = relationship("Reseña", back_populates="usuario")
+    actividades = relationship("ActividadLectura", back_populates="usuario")
 
 class Libro(Base):
     __tablename__ = "libros"
@@ -67,8 +68,17 @@ class SesionVibe(Base):
     tags_generados = Column(String)  # "nostalgia,lluvia,amor"
     fecha = Column(DateTime, default=datetime.utcnow)
 
-def crear_tablas():
-    Base.metadata.create_all(bind=engine)
+
+class ActividadLectura(Base):
+    __tablename__ = "actividades_lectura"
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    tipo = Column(String)
+    detalle = Column(Text)
+    puntos = Column(Integer, default=1)
+    fecha = Column(DateTime, default=datetime.utcnow)
+    usuario = relationship("Usuario", back_populates="actividades")
+
 
 def get_db():
     db = SessionLocal()
@@ -76,3 +86,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def crear_tablas():
+    Base.metadata.create_all(bind=engine)
+

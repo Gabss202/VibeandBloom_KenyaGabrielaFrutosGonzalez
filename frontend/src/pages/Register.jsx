@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import API from '../config';
 
 const Register = () => {
   const [form, setForm] = useState({ username: '', email: '', password: '' });
@@ -9,7 +10,7 @@ const Register = () => {
 
   const handleSubmit = async () => {
     try {
-      await axios.post('https://fantastic-garbanzo-r47j5ppj6x6xf5w9-8000.app.github.dev/registro', form);
+      await axios.post(`${API}/registro`, form);
       navigate('/login');
     } catch {
       setError('Error al registrarse, intenta con otro usuario');

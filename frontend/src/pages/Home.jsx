@@ -13,6 +13,12 @@ const Home = () => {
   const [cargando, setCargando] = useState(false);
   const [mensajeGuardado, setMensajeGuardado] = useState('');
   const [libroSeleccionado, setLibroSeleccionado] = useState(null);
+  const [estadosGuardados, setEstadosGuardados] = useState({});
+  const [chatMensajes, setChatMensajes] = useState([
+    { role: 'assistant', text: 'Soy Novelia. Puedo recomendarte libros modernos, explicar mis inferencias y ayudarte a elegir tu próxima lectura.' }
+  ]);
+  const [chatTexto, setChatTexto] = useState('');
+  const [chatCargando, setChatCargando] = useState(false);
 
   const token = localStorage.getItem('token');
   const username = localStorage.getItem('username');
@@ -45,11 +51,28 @@ const Home = () => {
     try {
       await axios.post(`${API}/biblioteca/agregar`, { libro, estado }, { headers });
       setMensajeGuardado(`"${libro.titulo}" agregado`);
+      setEstadosGuardados(prev => ({ ...prev, [libro.id]: estado }));
       setLibroSeleccionado(null);
       setTimeout(() => setMensajeGuardado(''), 3000);
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const enviarChat = async () => {
+    if (!chatTexto.trim() || chatCargando) return;
+    const mensajeUsuario = chatTexto.trim();
+    setChatMensajes(prev => [...prev, { role: 'user', text: mensajeUsuario }]);
+    setChatTexto('');
+    setChatCargando(true);
+    try {
+      const res = await axios.post(`${API}/chat/libros`, { mensaje: mensajeUsuario }, { headers });
+      setChatMensajes(prev => [...prev, { role: 'assistant', text: res.data.respuesta }]);
+    } catch (e) {
+      console.error(e);
+      setChatMensajes(prev => [...prev, { role: 'assistant', text: 'No pude responder en este momento. Intenta de nuevo o pregunta por recomendaciones, reseñas o tu racha.' }]);
+    }
+    setChatCargando(false);
   };
 
   const modos = [
@@ -66,13 +89,11 @@ const Home = () => {
 
   return (
     <div style={{ padding: '24px 16px 100px', maxWidth: '480px', margin: '0 auto' }}>
-      {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '28px', fontWeight: 'bold' }}>Hola, {username} 👋</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '4px' }}>¿Qué vibes buscas hoy?</p>
       </div>
 
-      {/* Selector de modo */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         {modos.map(m => (
           <button key={m.key} onClick={() => setModo(m.key)} style={{
@@ -90,7 +111,6 @@ const Home = () => {
         ))}
       </div>
 
-      {/* Card de vibe */}
       <div style={{
         background: 'var(--bg-card)', borderRadius: '24px',
         padding: '20px', marginBottom: '20px',
@@ -147,7 +167,6 @@ const Home = () => {
         </button>
       </div>
 
-      {/* Mensaje guardado */}
       {mensajeGuardado && (
         <div style={{
           background: 'var(--bg-card)', border: '1px solid var(--accent)',
@@ -156,10 +175,56 @@ const Home = () => {
         }}>✅ {mensajeGuardado}</div>
       )}
 
-      {/* Resultados */}
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: '24px',
+        padding: '18px', marginBottom: '16px',
+        border: '1px solid var(--border)'
+      }}>
+        <p style={{ color: 'var(--accent)', fontWeight: 'bold', fontSize: '15px', marginBottom: '8px' }}>
+          💬 Asistente lector
+        </p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '14px', lineHeight: '1.5' }}>
+          Pregúntame por recomendaciones modernas, explicación de reglas, rachas o qué leer según tu estado de ánimo.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
+          {chatMensajes.map((mensaje, index) => (
+            <div key={`${mensaje.role}-${index}`} style={{
+              alignSelf: mensaje.role === 'user' ? 'flex-end' : 'flex-start',
+              maxWidth: '86%',
+              background: mensaje.role === 'user' ? 'var(--accent)' : 'var(--bg-modal)',
+              color: mensaje.role === 'user' ? 'var(--bg-primary)' : 'var(--text-primary)',
+              borderRadius: '18px',
+              padding: '10px 12px',
+              fontSize: '13px',
+              lineHeight: '1.5'
+            }}>
+              {mensaje.text}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <input
+            value={chatTexto}
+            onChange={e => setChatTexto(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && enviarChat()}
+            placeholder="Ej: recomiéndame algo tipo BookTok, pero con romance y misterio"
+            style={{
+              flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+              borderRadius: '14px', padding: '12px 14px', color: 'var(--text-primary)', fontSize: '14px', outline: 'none'
+            }}
+          />
+          <button onClick={enviarChat} disabled={chatCargando} style={{
+            background: 'var(--accent)', color: 'var(--bg-primary)',
+            border: 'none', borderRadius: '14px', padding: '12px 16px',
+            fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', opacity: chatCargando ? 0.7 : 1
+          }}>
+            {chatCargando ? '...' : 'Enviar'}
+          </button>
+        </div>
+      </div>
+
       {resultado && (
         <>
-          {/* Vibe card */}
           <div style={{
             background: 'var(--bg-card)', borderRadius: '24px',
             padding: '20px', marginBottom: '16px', border: '1px solid var(--border)'
@@ -186,7 +251,6 @@ const Home = () => {
             </p>
           </div>
 
-          {/* Inferencias */}
           {resultado.recomendaciones?.inferencias?.length > 0 && (
             <div style={{
               background: 'var(--bg-card)', borderRadius: '20px',
@@ -201,7 +265,6 @@ const Home = () => {
             </div>
           )}
 
-          {/* Libros */}
           <p style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '14px' }}>
             Recomendación para ti
           </p>
@@ -226,14 +289,19 @@ const Home = () => {
               <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 'bold', fontSize: '15px', marginBottom: '4px', lineHeight: '1.3' }}>{libro.titulo}</p>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '8px' }}>{libro.autor}</p>
+                {estadosGuardados[libro.id] && (
+                  <p style={{ color: 'var(--accent)', fontSize: '11px', marginBottom: '8px', fontWeight: 'bold' }}>
+                    Guardado como: {estadosGuardados[libro.id].replace('_', ' ')}
+                  </p>
+                )}
                 <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '12px', lineHeight: '1.5' }}>
                   {libro.descripcion?.slice(0, 100)}{libro.descripcion?.length > 100 ? '...' : ''}
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'quiero_leer'); }} style={btnSmall}>
+                  <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'quiero_leer'); }} style={estadoBoton(estadosGuardados[libro.id] === 'quiero_leer')}>
                     🔖 Quiero leer
                   </button>
-                  <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'leyendo'); }} style={btnSmall}>
+                  <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'leyendo'); }} style={estadoBoton(estadosGuardados[libro.id] === 'leyendo')}>
                     📖 Leyendo
                   </button>
                 </div>
@@ -243,7 +311,6 @@ const Home = () => {
         </>
       )}
 
-      {/* Modal detalle libro */}
       {libroSeleccionado && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
@@ -274,6 +341,11 @@ const Home = () => {
               <div>
                 <p style={{ fontWeight: 'bold', fontSize: '17px', marginBottom: '4px' }}>{libroSeleccionado.titulo}</p>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '8px' }}>{libroSeleccionado.autor}</p>
+                {estadosGuardados[libroSeleccionado.id] && (
+                  <p style={{ color: 'var(--accent)', fontSize: '11px', marginBottom: '8px', fontWeight: 'bold' }}>
+                    Guardado como: {estadosGuardados[libroSeleccionado.id].replace('_', ' ')}
+                  </p>
+                )}
                 <span style={{
                   background: 'var(--bg-card)', color: 'var(--accent)',
                   padding: '4px 10px', borderRadius: '20px', fontSize: '12px'
@@ -284,21 +356,15 @@ const Home = () => {
               {libroSeleccionado.descripcion || 'Sin descripción disponible.'}
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'quiero_leer')} style={{
-                flex: 1, background: 'var(--bg-card)', color: 'var(--text-primary)',
-                border: '1px solid var(--border)', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: '500'
-              }}>🔖 Quiero leer</button>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leyendo')} style={{
-                flex: 1, background: 'var(--bg-card)', color: 'var(--text-primary)',
-                border: '1px solid var(--border)', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: '500'
-              }}>📖 Leyendo</button>
-              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leido')} style={{
-                flex: 1, background: 'var(--accent)', color: 'var(--bg-primary)',
-                border: 'none', borderRadius: '14px',
-                padding: '12px', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold'
-              }}>✅ Leído</button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'quiero_leer')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'quiero_leer')}>
+                🔖 Quiero leer
+              </button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leyendo')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'leyendo')}>
+                📖 Leyendo
+              </button>
+              <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leido')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'leido', true)}>
+                ✅ Leído
+              </button>
             </div>
           </div>
         </div>
@@ -312,6 +378,18 @@ const inputStyle = {
   borderRadius: '12px', padding: '12px 14px',
   color: 'var(--text-primary)', fontSize: '14px', outline: 'none', width: '100%'
 };
+
+const estadoBoton = (activo, primario = false) => ({
+  flex: 1,
+  background: activo ? 'var(--accent)' : (primario ? 'var(--accent)' : 'var(--bg-card)'),
+  color: activo ? 'var(--bg-primary)' : (primario ? 'var(--bg-primary)' : 'var(--text-primary)'),
+  border: activo || primario ? 'none' : '1px solid var(--border)',
+  borderRadius: '14px',
+  padding: '12px',
+  fontSize: '13px',
+  cursor: 'pointer',
+  fontWeight: activo || primario ? 'bold' : '500'
+});
 
 const btnSmall = {
   background: 'var(--bg-secondary)', color: 'var(--text-secondary)',

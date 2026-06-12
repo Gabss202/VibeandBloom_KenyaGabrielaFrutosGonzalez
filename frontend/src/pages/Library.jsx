@@ -8,6 +8,7 @@ const Library = () => {
   const [modalResena, setModalResena] = useState(null);
   const [resena, setResena] = useState({ calificacion: 5, texto: '' });
   const [mensajeIA, setMensajeIA] = useState('');
+  const [mensajeSistema, setMensajeSistema] = useState('');
   const [cargando, setCargando] = useState(true);
 
   const token = localStorage.getItem('token');
@@ -29,7 +30,9 @@ const Library = () => {
 
   const actualizarProgreso = async (libro_id, progreso) => {
     try {
-      await axios.post(`${API}/biblioteca/progreso`, { libro_id, progreso }, { headers });
+      const res = await axios.post(`${API}/biblioteca/progreso`, { libro_id, progreso }, { headers });
+      setMensajeSistema(res.data?.inferencia || res.data?.mensaje || '');
+      setTimeout(() => setMensajeSistema(''), 3500);
       cargarBiblioteca();
     } catch (e) {
       console.error(e);
@@ -44,9 +47,11 @@ const Library = () => {
         texto: resena.texto
       }, { headers });
       setMensajeIA(res.data.respuesta_ia);
+      setMensajeSistema(res.data.mensaje || 'Reseña registrada correctamente');
       setTimeout(() => {
         setModalResena(null);
         setMensajeIA('');
+        setMensajeSistema('');
         setResena({ calificacion: 5, texto: '' });
         cargarBiblioteca();
       }, 4000);
@@ -66,6 +71,16 @@ const Library = () => {
   return (
     <div style={{ padding: '24px 16px 100px', maxWidth: '480px', margin: '0 auto' }}>
       <h2 style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '20px' }}>Mi Biblioteca</h2>
+
+      {mensajeSistema && (
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--accent)',
+          borderRadius: '14px', padding: '12px 14px', marginBottom: '16px',
+          color: 'var(--accent)', fontSize: '14px', lineHeight: '1.5'
+        }}>
+          🧠 {mensajeSistema}
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{
@@ -284,5 +299,3 @@ const Library = () => {
 };
 
 export default Library;
-
-Holaaaaaa ¿En qué puedo ayudarte hoy?

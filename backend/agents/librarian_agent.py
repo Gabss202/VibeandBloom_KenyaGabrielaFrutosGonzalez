@@ -1,11 +1,12 @@
 from datetime import datetime
-from models import Biblioteca, Libro, Reseña
+from models import ActividadLectura, Biblioteca, Libro, Reseña
 from google import genai
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 class LibrarianAgent:
     def __init__(self, db):
@@ -28,6 +29,17 @@ class LibrarianAgent:
             self.db.add(libro)
             self.db.commit()
         return libro
+
+    def _registrar_actividad(self, usuario_id: int, tipo: str, detalle: str, puntos: int = 1):
+        actividad = ActividadLectura(
+            usuario_id=usuario_id,
+            tipo=tipo,
+            detalle=detalle,
+            puntos=puntos,
+            fecha=datetime.utcnow()
+        )
+        self.db.add(actividad)
+        self.db.commit()
 
     def agregar_a_biblioteca(self, usuario_id: int, libro_data: dict, estado: str) -> dict:
         # Primero guardar el libro si no existe
@@ -62,6 +74,8 @@ class LibrarianAgent:
         if estado == "leido":
             sugerencia = "¡Terminaste este libro! ¿Te gustaría dejar una reseña?"
 
+        self._registrar_actividad(usuario_id, "biblioteca", f"{libro_data['titulo']} marcado como {estado}", 2)
+
         return {
             "mensaje": f"Libro '{libro_data['titulo']}' {accion} como '{estado}'",
             "accion": accion,
@@ -90,6 +104,7 @@ class LibrarianAgent:
             inferencia = "¡Libro completado! Marcado como leído automáticamente"
 
         self.db.commit()
+        self._registrar_actividad(usuario_id, "progreso", f"Progreso de {libro_id} actualizado a {progreso}%", 1)
         return {
             "mensaje": f"Progreso actualizado a {progreso}%",
             "inferencia": inferencia
@@ -131,11 +146,20 @@ class LibrarianAgent:
         Responde con UN mensaje corto (máximo 2 oraciones) celebrando su reseña
         y animándolo a seguir leyendo. Sé cálido y entusiasta.
         """
-        response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
+        if client:
+            try:
+                response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
+                respuesta = response.text.strip()
+            except Exception:
+                respuesta = "Tu reseña quedó registrada y aporta mucho contexto a tu perfil lector."
+        else:
+            respuesta = "Tu reseña quedó registrada y aporta mucho contexto a tu perfil lector."
+
+        self._registrar_actividad(usuario_id, "reseña", f"Reseña publicada para {libro_id}", 2)
 
         return {
             "mensaje": f"Reseña {accion} exitosamente",
-            "respuesta_ia": response.text.strip()
+            "respuesta_ia": respuesta
         }
 
     def _actualizar_rating(self, libro_id: str):

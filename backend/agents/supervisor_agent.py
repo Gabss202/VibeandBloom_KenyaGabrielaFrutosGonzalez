@@ -1,12 +1,19 @@
-from google import genai
 import os
+import re
 from datetime import date, datetime
 from dotenv import load_dotenv
 from models import ActividadLectura, Biblioteca, Reseña, SesionVibe, RetoLectura
+from agents.librarian_agent import LibrarianAgent
+from agents.recommender_agent import RecommenderAgent
+
+try:
+    from google import genai
+except ImportError:
+    genai = None
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
 
 class SupervisorAgent:
     def __init__(self, db):
@@ -15,16 +22,138 @@ class SupervisorAgent:
     def _detectar_intencion(self, mensaje: str) -> str:
         texto = mensaje.lower()
         reglas = [
-            ("recomendacion", ["recomienda", "sugiere", "booktok", "qué leo", "que leo", "similar a", "parecido a"]),
+            ("biblioteca", ["agrega", "añade", "añadir", "mete", "pon", "mi biblioteca", "a la biblioteca", "a mi biblioteca"]),
+            ("recomendacion", ["recomendaciones", "recomendación", "recomienda", "sugiere", "booktok", "qué leo", "que leo", "similar a", "parecido a", "recom", "libro"]),
             ("perfil", ["racha", "perfil", "estadísticas", "estadisticas", "nivel", "reto", "progreso"]),
             ("explicacion", ["por qué", "porque", "explica", "explicación", "regla", "inferencia"]),
-            ("biblioteca", ["agrega", "añade", "marcar", "quiero leer", "leyendo", "leído", "leido"]),
             ("reseña", ["reseña", "review", "opinas", "calificación", "calificacion"]),
         ]
         for intencion, palabras in reglas:
             if any(palabra in texto for palabra in palabras):
                 return intencion
+
+        generos_y_vibes = [
+            "dark romance", "darkromance", "oscuro", "oscura", "cozy", "cozy mystery",
+            "romántico", "romantica", "romance", "misterioso", "misterio",
+            "thriller", "aventurero", "fantasía", "fantasia", "esperanzador",
+            "esperanzadora", "melancólico", "melancolica"
+        ]
+        if any(palabra in texto for palabra in generos_y_vibes):
+            return "recomendacion"
+
         return "conversacion"
+
+    def _extraer_estado_biblioteca(self, mensaje: str) -> str:
+        texto = mensaje.lower()
+        if any(k in texto for k in ["leyendo", "estoy leyendo", "sigo leyendo", "leyend"]):
+            return "leyendo"
+        if any(k in texto for k in ["leído", "leido", "terminado", "terminé", "ya lo leí", "ya lo lei", "completado"]):
+            return "leido"
+        return "quiero_leer"
+
+    def _extraer_titulo_autor(self, mensaje: str) -> tuple[str, str | None]:
+        texto = mensaje.strip()
+
+        match = re.search(r'["“”‘’](.+?)["“”‘’]', texto)
+        if match:
+            contenido = match.group(1).strip()
+            if " de " in contenido:
+                partes = contenido.rsplit(" de ", 1)
+                return partes[0].strip(), partes[1].strip()
+            return contenido, None
+
+        match = re.search(r'(?:agrega|añade|añadir|mete|pon)\s+(?:el\s+libro\s+)?(.+?)(?:\s+(?:a mi biblioteca|a la biblioteca|a mi lista|a la lista|como|en mi biblioteca|para leer|para mi biblioteca|$))', texto, re.IGNORECASE)
+        if match:
+            frase = match.group(1).strip()
+            if " de " in frase:
+                partes = frase.rsplit(" de ", 1)
+                return partes[0].strip(), partes[1].strip()
+            return frase, None
+
+        match = re.search(r'(?:quiero leer|leer|me gustaría leer|me gustaria leer)\s+(.+?)(?:\s+(?:de\s+[^\s]+|a mi biblioteca|a la biblioteca|$))', texto, re.IGNORECASE)
+        if match:
+            frase = match.group(1).strip()
+            if " de " in frase:
+                partes = frase.rsplit(" de ", 1)
+                return partes[0].strip(), partes[1].strip()
+            return frase, None
+
+        return texto, None
+
+    def _extraer_termino_recomendacion(self, mensaje: str) -> str:
+        texto = mensaje.lower().strip()
+        patrones = [
+            r'dame recomendaciones? de (.+)',
+            r'dame libros? de (.+)',
+            r'recomienda(?:me)?(?: algo)? de (.+)',
+            r'sugiere(?:me)?(?: algo)? de (.+)',
+            r'quiero leer (.+)',
+            r'busca libros? de (.+)',
+            r'buscame libros? de (.+)',
+            r'(.+?) similar a (.+)'
+        ]
+        for patron in patrones:
+            match = re.search(patron, texto, re.IGNORECASE)
+            if match:
+                termino = match.group(match.lastindex).strip()
+                if termino:
+                    return termino
+
+        termino = re.sub(r'^(por favor|porfa|por favor\s+)?(dame|puedes|puedes darme|quiero|quieres|me recomiendas|recomienda|sugiere|busca|buscame|quiero leer)\s*', '', texto)
+        return termino.strip() or texto
+
+    def _construir_respuesta_recomendacion(self, termino: str, libros: list, resumen: dict) -> str:
+        if not libros:
+            return (
+                f'No encontré recomendaciones específicas para "{termino}" en este momento, pero puedo sugerirte consultar otras vibras como cozy, romántico u oscuro.'
+            )
+
+        lineas = [
+            f'Basado en tu consulta "{termino}", te recomiendo estos libros:'
+        ]
+        for libro in libros[:4]:
+            lineas.append(f'"{libro.get("titulo")}" de {libro.get("autor")}.')
+
+        if resumen['estadisticas']['libros_leidos'] > 5:
+            lineas.append('Como tienes un perfil lector activo, también prioricé opciones que se ajusten a tu estilo actual.')
+        else:
+            lineas.append('Estas recomendaciones están pensadas para ayudarte a encontrar lecturas modernas y fáciles de comenzar.')
+
+        return ' '.join(lineas)
+
+    def _ejecutar_orden_biblioteca(self, usuario_id: int, mensaje: str) -> dict | None:
+        estado = self._extraer_estado_biblioteca(mensaje)
+        titulo, autor = self._extraer_titulo_autor(mensaje)
+        termino_busqueda = titulo
+        if autor:
+            termino_busqueda = f"{titulo} {autor}"
+
+        recommender = RecommenderAgent(self.db)
+        libro_data = recommender.buscar_libro_por_texto(termino_busqueda)
+        if not libro_data:
+            return {
+                "mensaje": "No pude encontrar un libro específico para agregar. Intenta mencionar el título o autor de forma más clara.",
+                "accion": "fallo"
+            }
+
+        if autor and not libro_data.get("autor"):
+            libro_data["autor"] = autor
+        elif autor and autor.lower() not in libro_data.get("autor", "").lower():
+            libro_data["autor"] = autor
+
+        librarian = LibrarianAgent(self.db)
+        resultado = librarian.agregar_a_biblioteca(usuario_id, libro_data, estado)
+        return {
+            **resultado,
+            "libro": {
+                "id": libro_data["id"],
+                "titulo": libro_data["titulo"],
+                "autor": libro_data["autor"],
+                "portada_url": libro_data.get("portada_url", ""),
+                "genero": libro_data.get("genero", "")
+            },
+            "estado": estado
+        }
 
     def _registrar_actividad(self, usuario_id: int, tipo: str, detalle: str, puntos: int = 1):
         actividad = ActividadLectura(
@@ -233,7 +362,8 @@ class SupervisorAgent:
 
         prompt = f"""
         Eres un chatbot experto en libros modernos, recomendaciones de BookTok y sistema experto explicable.
-        Responde al usuario con tono natural, cercano y útil.
+        Responde de forma breve, precisa y directa. Si el usuario hace una pregunta concreta, contesta exactamente lo que pide.
+        No agregues saludos iniciales ni explicaciones innecesarias.
         Debes incluir:
         - una respuesta directa a su pregunta;
         - una inferencia breve sobre su perfil lector si aplica;
@@ -247,14 +377,45 @@ class SupervisorAgent:
         {mensaje}
         """
 
+        accion_biblioteca = None
+        if intencion == "biblioteca":
+            accion_biblioteca = self._ejecutar_orden_biblioteca(usuario_id, mensaje)
+            if accion_biblioteca:
+                respuesta = accion_biblioteca.get("mensaje", "He actualizado tu biblioteca según tu indicación.")
+                sugerencia = accion_biblioteca.get("sugerencia")
+                if sugerencia:
+                    respuesta = f"{respuesta} {sugerencia}"
+                self._registrar_actividad(usuario_id, "chat", mensaje[:250], 1)
+                return {
+                    "respuesta": respuesta,
+                    "resumen": resumen,
+                    "intencion": intencion,
+                    "accion_biblioteca": accion_biblioteca
+                }
+
+        if intencion == "recomendacion":
+            termino = self._extraer_termino_recomendacion(mensaje)
+            recommender = RecommenderAgent(self.db)
+            libros = recommender.buscar_libros_por_termino(termino, max_results=6)
+            if not libros:
+                libros = recommender._fallback_libros([], [termino])
+            respuesta = self._construir_respuesta_recomendacion(termino, libros, resumen)
+            self._registrar_actividad(usuario_id, "chat", mensaje[:250], 1)
+            return {
+                "respuesta": respuesta,
+                "resumen": resumen,
+                "intencion": intencion,
+                "recomendaciones": libros
+            }
+
         if client:
             try:
                 response = client.models.generate_content(model="gemini-2.0-flash-lite", contents=prompt)
                 respuesta = response.text.strip()
             except Exception:
-                respuesta = f"Puedo ayudarte con libros, inferencias y hábitos de lectura. Veo una racha de {resumen['estadisticas']['racha_lectura']} días y te sugeriría seguir con una recomendación que encaje con tu vibe {resumen['vibe_favorito']}."
+                respuesta = self._fallback_chat(resumen, mensaje)
         else:
-            respuesta = f"Puedo ayudarte con libros, inferencias y hábitos de lectura. Veo una racha de {resumen['estadisticas']['racha_lectura']} días y te sugeriría seguir con una recomendación que encaje con tu vibe {resumen['vibe_favorito']}."
+            respuesta = self._fallback_chat(resumen, mensaje)
 
         self._registrar_actividad(usuario_id, "chat", mensaje[:250], 1)
         return {
@@ -262,3 +423,40 @@ class SupervisorAgent:
             "resumen": resumen,
             "intencion": intencion
         }
+
+    def _fallback_chat(self, resumen: dict, mensaje: str) -> str:
+        texto = mensaje.lower()
+        if any(word in texto for word in ["autor", "autora", "escritor", "escritora"]):
+            return (
+                "Para autores modernos, prueba a leer algo de Colleen Hoover, Emily Henry o Taylor Jenkins Reid. "
+                "Si prefieres algo oscuro, Jason Rekulak y Alice Munro son buenas opciones."
+            )
+        if any(word in texto for word in ["tendencia", "tendencias", "trending", "booktok", "bookstagram", "top", "popular"]):
+            return (
+                "Las tendencias actuales incluyen romance contemporáneo, dark romance y thrillers psicológicos. "
+                "También está muy popular 'Book Lovers' y 'Tomorrow, and Tomorrow, and Tomorrow'."
+            )
+        if any(word in texto for word in ["recomienda", "sugiere", "recom", "qué libro", "libro"]):
+            return (
+                f"Te recomiendo un libro moderno y muy comentado: 'Tomorrow, and Tomorrow, and Tomorrow' o 'Book Lovers'. "
+                f"Con {resumen['estadisticas']['libros_leidos']} libros leídos y una racha de {resumen['estadisticas']['racha_lectura']} días, estas opciones encajan con tu perfil."
+            )
+        if any(word in texto for word in ["racha", "dias", "activo", "actividad"]):
+            return (
+                f"Tu racha actual es de {resumen['estadisticas']['racha_lectura']} días. Sigue con lecturas frecuentes y completa más retos para mantenerla. "
+                "Puedes apuntar a leer un libro corto o continuar alguno que ya tengas en 'Leyendo'."
+            )
+        if any(word in texto for word in ["reto", "retos", "desafío", "desafio"]):
+            return (
+                "Puedes agregar un reto nuevo desde tu perfil y actualizar su progreso cada vez que avances. "
+                "Por ejemplo, intenta completar 3 reseñas este mes o terminar un libro en 2 semanas."
+            )
+        if any(word in texto for word in ["vibe", "mood", "estado", "ánimo", "animo"]):
+            return (
+                f"Si buscas algo según tu estado de ánimo, con tu vibe favorito '{resumen['vibe_favorito']}' te sugiero combinarlo con géneros contemporáneos y libros que no se repitan mucho. "
+                "Puedo recomendarte un libro diferente cada vez que me pidas un mood específico."
+            )
+        return (
+            "Puedo ayudarte con recomendaciones modernas, autores recientes, novedades de tendencias y a gestionar tu biblioteca. "
+            "Dime un autor, género o libro y te respondo con algo concreto."
+        )

@@ -1,12 +1,16 @@
 from datetime import datetime
 from models import ActividadLectura, Biblioteca, Libro, Reseña
-from google import genai
 import os
 from dotenv import load_dotenv
 
+try:
+    from google import genai
+except ImportError:
+    genai = None
+
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+client = genai.Client(api_key=GEMINI_API_KEY) if genai and GEMINI_API_KEY else None
 
 class LibrarianAgent:
     def __init__(self, db):

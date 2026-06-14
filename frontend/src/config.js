@@ -1,2 +1,2 @@
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
-export default API;
+const API = process.env.REACT_APP_API_URL ||'http://localhost:8080';;
+export default API;a

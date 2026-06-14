@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import API from '../config';
@@ -6,22 +6,20 @@ import API from '../config';
 const Profile = () => {
   const [resumen, setResumen] = useState(null);
   const [retos, setRetos] = useState([]);
+  const [resenas, setResenas] = useState([]);
+  const [seccionActiva, setSeccionActiva] = useState('actividad');
   const [nuevoReto, setNuevoReto] = useState({ titulo: '', descripcion: '', progreso: 0 });
   const [editando, setEditando] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [cargandoRetos, setCargandoRetos] = useState(true);
+  const [cargandoResenas, setCargandoResenas] = useState(false);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const username = localStorage.getItem('username');
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
-  useEffect(() => {
-    cargarResumen();
-    cargarRetos();
-  }, []);
-
-  const cargarResumen = async () => {
+  const cargarResumen = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/perfil/resumen`, { headers });
       setResumen(res.data);
@@ -29,9 +27,9 @@ const Profile = () => {
       console.error(e);
     }
     setCargando(false);
-  };
+  }, [headers]);
 
-  const cargarRetos = async () => {
+  const cargarRetos = useCallback(async () => {
     setCargandoRetos(true);
     try {
       const res = await axios.get(`${API}/retos`, { headers });
@@ -40,7 +38,28 @@ const Profile = () => {
       console.error(e);
     }
     setCargandoRetos(false);
+  }, [headers]);
+
+  const cargarResenas = useCallback(async () => {
+    setCargandoResenas(true);
+    try {
+      const res = await axios.get(`${API}/resenas`, { headers });
+      setResenas(res.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setCargandoResenas(false);
+  }, [headers]);
+
+  const mostrarResenas = async () => {
+    await cargarResenas();
+    setSeccionActiva('resenas');
   };
+
+  useEffect(() => {
+    cargarResumen();
+    cargarRetos();
+  }, [cargarResumen, cargarRetos]);
 
   const guardarReto = async () => {
     if (!nuevoReto.titulo.trim() || !nuevoReto.descripcion.trim()) return;
@@ -365,43 +384,135 @@ const Profile = () => {
           {/* Reseñas */}
           <div style={{
             background: 'var(--bg-card)', borderRadius: '18px',
-            padding: '18px', marginBottom: '24px',
-            border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            padding: '18px', marginBottom: '14px',
+            border: '1px solid var(--border)'
           }}>
-            <div>
-              <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>Mis reseñas</p>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                {resumen.estadisticas.total_reseñas} reseñas publicadas
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', alignItems: 'center' }}>
+              <div>
+                <p style={{ fontWeight: 'bold', marginBottom: '4px' }}>Mis reseñas</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  {resumen.estadisticas.total_reseñas} reseñas publicadas
+                </p>
+              </div>
+              <button onClick={mostrarResenas} style={{
+                background: 'var(--accent)', color: 'var(--bg-primary)',
+                border: 'none', borderRadius: '12px', padding: '10px 14px',
+                fontSize: '12px', cursor: 'pointer', fontWeight: 'bold'
+              }}>
+                Ver reseñas
+              </button>
             </div>
-            <span style={{ fontSize: '32px' }}>Reseñas</span>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.5' }}>
+              Revisa tus reseñas y disfruta de una experiencia completa con libros ya leídos.
+            </p>
           </div>
 
           {/* Configuración */}
           <div style={{
-            background: 'var(--bg-card)', borderRadius: '18px',
-            border: '1px solid var(--border)', marginBottom: '16px', overflow: 'hidden'
+            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '18px'
           }}>
             {[
-              { label: 'Actividad reciente', emoji: '' },
-              { label: 'Estadísticas', emoji: '' },
-              { label: 'Retos de lectura', emoji: '' },
-            ].map((item, i) => (
-              <div key={item.label} style={{
-                padding: '16px 18px', display: 'flex', alignItems: 'center',
-                justifyContent: 'space-between',
-                borderBottom: i < 2 ? '1px solid var(--border)' : 'none',
-                cursor: 'pointer'
+              { key: 'actividad', label: 'Actividad reciente' },
+              { key: 'estadisticas', label: 'Estadísticas' },
+              { key: 'retos', label: 'Retos de lectura' },
+            ].map(item => (
+              <button key={item.key} onClick={() => setSeccionActiva(item.key)} style={{
+                background: seccionActiva === item.key ? 'var(--accent)' : 'var(--bg-card)',
+                color: seccionActiva === item.key ? 'var(--bg-primary)' : 'var(--text-primary)',
+                border: '1px solid var(--border)', borderRadius: '16px',
+                padding: '14px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: '700'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '18px' }}>{item.emoji}</span>
-                  <p style={{ fontSize: '14px' }}>{item.label}</p>
-                </div>
-                <span style={{ color: 'var(--text-muted)' }}>›</span>
-              </div>
+                {item.label}
+              </button>
             ))}
           </div>
+          {seccionActiva === 'actividad' && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: '18px', padding: '18px',
+              border: '1px solid var(--border)', marginBottom: '14px'
+            }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '12px', color: 'var(--accent)' }}>Actividad reciente</p>
+              {resumen.actividad_reciente?.length ? (
+                resumen.actividad_reciente.map((actividad, index) => (
+                  <div key={`${actividad.fecha}-${index}`} style={{ marginBottom: index < resumen.actividad_reciente.length - 1 ? '10px' : '0' }}>
+                    <p style={{ fontSize: '13px', fontWeight: '600', marginBottom: '2px' }}>{actividad.tipo}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.4' }}>{actividad.detalle}</p>
+                  </div>
+                ))
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Aún no hay actividad registrada.</p>
+              )}
+            </div>
+          )}
+          {seccionActiva === 'estadisticas' && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: '18px', padding: '18px',
+              border: '1px solid var(--border)', marginBottom: '14px'
+            }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '14px', color: 'var(--accent)' }}>Estadísticas</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {[
+                  { label: 'Libros leídos', value: resumen.estadisticas.libros_leidos },
+                  { label: 'Leyendo ahora', value: resumen.estadisticas.leyendo_ahora },
+                  { label: 'Por leer', value: resumen.estadisticas.quiero_leer },
+                  { label: 'Racha', value: `${resumen.estadisticas.racha_lectura} días` },
+                  { label: 'Calif. promedio', value: resumen.estadisticas.rating_promedio || '—' },
+                  { label: 'Progreso sem.', value: `${resumen.estadisticas.progreso_semanal}%` },
+                ].map(item => (
+                  <div key={item.label} style={{ background: 'var(--bg-modal)', borderRadius: '14px', padding: '14px' }}>
+                    <p style={{ fontSize: '14px', fontWeight: '700', marginBottom: '6px' }}>{item.value}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{item.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {seccionActiva === 'retos' && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: '18px', padding: '18px',
+              border: '1px solid var(--border)', marginBottom: '14px'
+            }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '14px', color: 'var(--accent)' }}>Retos de lectura</p>
+              {(resumen.retos || []).length ? (
+                resumen.retos.map((reto, index) => (
+                  <div key={reto.id || reto.titulo} style={{ marginBottom: index < resumen.retos.length - 1 ? '14px' : '0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <p style={{ fontSize: '13px', fontWeight: '600' }}>{reto.titulo}</p>
+                      <p style={{ color: 'var(--accent)', fontSize: '12px', fontWeight: 'bold' }}>{reto.progreso}%</p>
+                    </div>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '8px', lineHeight: '1.4' }}>{reto.descripcion}</p>
+                    <div style={{ background: 'var(--bg-modal)', borderRadius: '999px', height: '7px', overflow: 'hidden' }}>
+                      <div style={{ width: `${reto.progreso}%`, height: '100%', background: 'var(--accent)' }} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Aún no tienes retos registrados.</p>
+              )}
+            </div>
+          )}
+          {seccionActiva === 'resenas' && (
+            <div style={{
+              background: 'var(--bg-card)', borderRadius: '18px', padding: '18px',
+              border: '1px solid var(--border)', marginBottom: '14px'
+            }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '14px', color: 'var(--accent)' }}>Reseñas</p>
+              {cargandoResenas ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando reseñas...</p>
+              ) : resenas.length ? (
+                resenas.map((reseña, index) => (
+                  <div key={`${reseña.libro_id}-${index}`} style={{ marginBottom: index < resenas.length - 1 ? '16px' : '0', paddingBottom: '12px', borderBottom: index < resenas.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <p style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>{reseña.titulo}</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '6px' }}>{reseña.autor}</p>
+                    <p style={{ color: 'var(--accent)', fontSize: '12px', marginBottom: '8px' }}>⭐ {reseña.calificacion.toFixed(1)}</p>
+                    <p style={{ color: 'var(--text-primary)', fontSize: '13px', lineHeight: '1.6' }}>{reseña.texto}</p>
+                  </div>
+                ))
+              ) : (
+                <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Aún no tienes reseñas publicadas. Escribe tu primera reseña desde tu biblioteca o un libro leído.</p>
+              )}
+            </div>
+          )}
         </>
       )}
 

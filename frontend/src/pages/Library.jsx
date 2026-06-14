@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import API from '../config';
 
@@ -12,13 +12,9 @@ const Library = () => {
   const [cargando, setCargando] = useState(true);
 
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
-  useEffect(() => {
-    cargarBiblioteca();
-  }, []);
-
-  const cargarBiblioteca = async () => {
+  const cargarBiblioteca = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/biblioteca`, { headers });
       setBiblioteca(res.data);
@@ -26,7 +22,11 @@ const Library = () => {
       console.error(e);
     }
     setCargando(false);
-  };
+  }, [headers]);
+
+  useEffect(() => {
+    cargarBiblioteca();
+  }, [cargarBiblioteca]);
 
   const actualizarProgreso = async (libro_id, progreso) => {
     try {

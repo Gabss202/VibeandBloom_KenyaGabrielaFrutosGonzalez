@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { HiMusicalNote, HiVideoCamera, HiPhoto, HiSparkles } from 'react-icons/hi2';
 import API from '../config';
@@ -16,23 +16,24 @@ const Home = () => {
   const [estadosGuardados, setEstadosGuardados] = useState({});
   const [populares, setPopulares] = useState([]);
   const [popularesCargando, setPopularesCargando] = useState(true);
-  const [bibliotecaCargando, setBibliotecaCargando] = useState(true);
   const [chatMensajes, setChatMensajes] = useState([
     { role: 'assistant', text: 'Soy Novelia. Puedo recomendarte libros modernos, explicar mis inferencias y ayudarte a elegir tu próxima lectura.' }
   ]);
   const [chatTexto, setChatTexto] = useState('');
   const [chatCargando, setChatCargando] = useState(false);
+  const [chatPreferencia, setChatPreferencia] = useState('breve');
+  const [chatMostrarBotonesBiblioteca, setChatMostrarBotonesBiblioteca] = useState(true);
+  const [reviewModal, setReviewModal] = useState(null);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewMessage, setReviewMessage] = useState('');
+  const [chatRecomendaciones, setChatRecomendaciones] = useState([]);
 
   const token = localStorage.getItem('token');
   const username = localStorage.getItem('username');
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
-  useEffect(() => {
-    cargarPopulares();
-    cargarEstadosBiblioteca();
-  }, []);
-
-  const cargarPopulares = async () => {
+  const cargarPopulares = useCallback(async () => {
     setPopularesCargando(true);
     try {
       const res = await axios.get(`${API}/libros/populares`, { headers });
@@ -41,10 +42,9 @@ const Home = () => {
       console.error(e);
     }
     setPopularesCargando(false);
-  };
+  }, [headers]);
 
-  const cargarEstadosBiblioteca = async () => {
-    setBibliotecaCargando(true);
+  const cargarEstadosBiblioteca = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/biblioteca`, { headers });
       const estados = {};
@@ -55,8 +55,12 @@ const Home = () => {
     } catch (e) {
       console.error(e);
     }
-    setBibliotecaCargando(false);
-  };
+  }, [headers]);
+
+  useEffect(() => {
+    cargarPopulares();
+    cargarEstadosBiblioteca();
+  }, [cargarPopulares, cargarEstadosBiblioteca]);
 
   const detectarVibe = async () => {
     setCargando(true);
@@ -93,18 +97,55 @@ const Home = () => {
     }
   };
 
+  const abrirModalResena = (libro) => {
+    setReviewModal(libro);
+    setReviewText('');
+    setReviewRating(5);
+    setReviewMessage('');
+  };
+
+  const publicarResena = async () => {
+    if (!reviewModal || !reviewText.trim()) return;
+    try {
+      const res = await axios.post(`${API}/resenas`, {
+        libro_id: reviewModal.id,
+        calificacion: reviewRating,
+        texto: reviewText.trim()
+      }, { headers });
+      setReviewMessage(res.data?.respuesta_ia || res.data?.mensaje || 'Reseña publicada correctamente.');
+      setTimeout(() => {
+        setReviewModal(null);
+        setReviewMessage('');
+      }, 3500);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const enviarChat = async () => {
     if (!chatTexto.trim() || chatCargando) return;
     const mensajeUsuario = chatTexto.trim();
     setChatMensajes(prev => [...prev, { role: 'user', text: mensajeUsuario }]);
     setChatTexto('');
     setChatCargando(true);
+    setChatRecomendaciones([]);
     try {
-      const res = await axios.post(`${API}/chat/libros`, { mensaje: mensajeUsuario }, { headers });
+      let mensajePayload = mensajeUsuario;
+      if (chatPreferencia === 'detallado') {
+        mensajePayload += ' Por favor, responde con explicaciones más detalladas y menciona por qué recomiendas cada libro.';
+      } else {
+        mensajePayload += ' Por favor, responde de forma breve y clara.';
+      }
+      const res = await axios.post(`${API}/chat/libros`, { mensaje: mensajePayload }, { headers });
       setChatMensajes(prev => [...prev, { role: 'assistant', text: res.data.respuesta }]);
+      setChatRecomendaciones(res.data.recomendaciones || []);
+      if (res.data.accion_biblioteca) {
+        await cargarEstadosBiblioteca();
+      }
     } catch (e) {
       console.error(e);
       setChatMensajes(prev => [...prev, { role: 'assistant', text: 'No pude responder en este momento. Intenta de nuevo o pregunta por recomendaciones, reseñas o tu racha.' }]);
+      setChatRecomendaciones([]);
     }
     setChatCargando(false);
   };
@@ -139,6 +180,13 @@ const Home = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
             {populares.slice(0, 4).map(libro => (
               <div key={libro.id} style={{ background: 'var(--bg-card)', borderRadius: '18px', padding: '14px', border: '1px solid var(--border)' }}>
+                {libro.portada_url ? (
+                  <img src={libro.portada_url} alt={libro.titulo} style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '16px', marginBottom: '12px' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '170px', background: 'var(--bg-modal)', borderRadius: '16px', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    Sin portada disponible
+                  </div>
+                )}
                 <p style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '6px', lineHeight: '1.3' }}>{libro.titulo}</p>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '10px' }}>{libro.autor}</p>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -147,6 +195,9 @@ const Home = () => {
                   </button>
                   <button onClick={() => agregarBiblioteca(libro, 'leyendo')} style={estadoBoton(estadosGuardados[libro.id] === 'leyendo')}>
                     Leyendo
+                  </button>
+                  <button onClick={() => agregarBiblioteca(libro, 'leido')} style={estadoBoton(estadosGuardados[libro.id] === 'leido', true)}>
+                    Leído
                   </button>
                 </div>
               </div>
@@ -249,6 +300,31 @@ const Home = () => {
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '14px', lineHeight: '1.5' }}>
           Pregúntame por recomendaciones modernas, explicación de reglas, rachas o qué leer según tu estado de ánimo.
         </p>
+        <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+            <button onClick={() => setChatPreferencia('breve')} style={{
+              flex: 1, minWidth: '130px', background: chatPreferencia === 'breve' ? 'var(--accent)' : 'var(--bg-card)',
+              color: chatPreferencia === 'breve' ? 'var(--bg-primary)' : 'var(--text-primary)', border: '1px solid var(--border)',
+              borderRadius: '14px', padding: '12px', cursor: 'pointer', fontSize: '13px', fontWeight: '700'
+            }}>
+              Respuesta breve
+            </button>
+            <button onClick={() => setChatPreferencia('detallado')} style={{
+              flex: 1, minWidth: '130px', background: chatPreferencia === 'detallado' ? 'var(--accent)' : 'var(--bg-card)',
+              color: chatPreferencia === 'detallado' ? 'var(--bg-primary)' : 'var(--text-primary)', border: '1px solid var(--border)',
+              borderRadius: '14px', padding: '12px', cursor: 'pointer', fontSize: '13px', fontWeight: '700'
+            }}>
+              Respuesta detallada
+            </button>
+          </div>
+          <button onClick={() => setChatMostrarBotonesBiblioteca(prev => !prev)} style={{
+            background: chatMostrarBotonesBiblioteca ? 'var(--accent)' : 'var(--bg-card)',
+            color: chatMostrarBotonesBiblioteca ? 'var(--bg-primary)' : 'var(--text-primary)', border: '1px solid var(--border)',
+            borderRadius: '14px', padding: '12px', cursor: 'pointer', fontSize: '13px', fontWeight: '700'
+          }}>
+            {chatMostrarBotonesBiblioteca ? 'Ocultar botones de biblioteca' : 'Mostrar botones de biblioteca'}
+          </button>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
           {chatMensajes.map((mensaje, index) => (
             <div key={`${mensaje.role}-${index}`} style={{
@@ -285,6 +361,43 @@ const Home = () => {
           </button>
         </div>
       </div>
+
+      {chatRecomendaciones.length > 0 && (
+        <div style={{
+          background: 'var(--bg-card)', borderRadius: '24px', padding: '20px', marginBottom: '16px', border: '1px solid var(--border)'
+        }}>
+          <p style={{ color: 'var(--accent)', fontWeight: 'bold', fontSize: '15px', marginBottom: '10px' }}>Recomendaciones desde el chat</p>
+          {chatRecomendaciones.map(libro => (
+            <div key={libro.id} style={{
+              display: 'flex', gap: '14px', padding: '14px', marginBottom: '12px', borderRadius: '18px', background: 'var(--bg-modal)'
+            }}>
+              {libro.portada_url ? (
+                <img src={libro.portada_url} alt={libro.titulo} style={{ width: '72px', height: '102px', borderRadius: '14px', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '72px', height: '102px', borderRadius: '14px', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>Sin portada</div>
+              )}
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: '700', fontSize: '14px', marginBottom: '6px' }}>{libro.titulo}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '10px' }}>{libro.autor}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5', marginBottom: '10px' }}>{libro.descripcion}</p>
+                {chatMostrarBotonesBiblioteca && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button onClick={() => agregarBiblioteca(libro, 'quiero_leer')} style={estadoBoton(estadosGuardados[libro.id] === 'quiero_leer')}>
+                      Quiero leer
+                    </button>
+                    <button onClick={() => agregarBiblioteca(libro, 'leyendo')} style={estadoBoton(estadosGuardados[libro.id] === 'leyendo')}>
+                      Leyendo
+                    </button>
+                    <button onClick={() => agregarBiblioteca(libro, 'leido')} style={estadoBoton(estadosGuardados[libro.id] === 'leido', true)}>
+                      Leído
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {resultado && (
         <>
@@ -367,6 +480,9 @@ const Home = () => {
                   <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'leyendo'); }} style={estadoBoton(estadosGuardados[libro.id] === 'leyendo')}>
                     Leyendo
                   </button>
+                  <button onClick={e => { e.stopPropagation(); agregarBiblioteca(libro, 'leido'); }} style={estadoBoton(estadosGuardados[libro.id] === 'leido', true)}>
+                    Leído
+                  </button>
                 </div>
               </div>
             </div>
@@ -418,7 +534,7 @@ const Home = () => {
             <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', marginBottom: '20px' }}>
               {libroSeleccionado.descripcion || 'Sin descripción disponible.'}
             </p>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button onClick={() => agregarBiblioteca(libroSeleccionado, 'quiero_leer')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'quiero_leer')}>
                 Quiero leer
               </button>
@@ -428,7 +544,76 @@ const Home = () => {
               <button onClick={() => agregarBiblioteca(libroSeleccionado, 'leido')} style={estadoBoton(estadosGuardados[libroSeleccionado.id] === 'leido', true)}>
                 Leído
               </button>
+              {estadosGuardados[libroSeleccionado.id] === 'leido' && (
+                <button onClick={() => abrirModalResena(libroSeleccionado)} style={estadoBoton(false)}>
+                  Añadir reseña
+                </button>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {reviewModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'flex-end', zIndex: 220
+        }} onClick={() => setReviewModal(null)}>
+          <div style={{
+            background: 'var(--bg-modal)', borderRadius: '24px 24px 0 0',
+            padding: '24px', width: '100%', maxHeight: '85vh', overflowY: 'auto'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '6px' }}>Reseña</p>
+                <h3 style={{ fontSize: '20px', fontWeight: 'bold' }}>{reviewModal.titulo}</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>{reviewModal.autor}</p>
+              </div>
+              <button onClick={() => setReviewModal(null)} style={{
+                background: 'none', border: 'none', color: 'var(--text-secondary)',
+                fontSize: '24px', cursor: 'pointer'
+              }}>×</button>
+            </div>
+            <div style={{ marginBottom: '18px' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '6px' }}>Calificación</p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[1, 2, 3, 4, 5].map(n => (
+                  <span key={n} onClick={() => setReviewRating(n)} style={{
+                    fontSize: '30px', cursor: 'pointer', color: n <= reviewRating ? 'var(--accent)' : 'var(--text-muted)'
+                  }}>★</span>
+                ))}
+              </div>
+            </div>
+            <textarea
+              placeholder="Escribe tu reseña aquí..."
+              value={reviewText}
+              onChange={e => setReviewText(e.target.value)}
+              rows={5}
+              style={{
+                background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                borderRadius: '14px', padding: '14px', color: 'var(--text-primary)',
+                fontSize: '14px', outline: 'none', width: '100%', resize: 'vertical', lineHeight: '1.5'
+              }}
+            />
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'right', margin: '8px 0 18px' }}>
+              {reviewText.length}/500
+            </p>
+            {reviewMessage && (
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--accent)',
+                borderRadius: '14px', padding: '14px', marginBottom: '16px',
+                color: 'var(--accent)', fontSize: '14px', lineHeight: '1.5'
+              }}>
+                {reviewMessage}
+              </div>
+            )}
+            <button onClick={publicarResena} style={{
+              background: 'var(--accent)', color: 'var(--bg-primary)',
+              border: 'none', borderRadius: '14px', padding: '16px',
+              fontSize: '15px', fontWeight: 'bold', cursor: 'pointer', width: '100%'
+            }}>
+              Publicar reseña
+            </button>
           </div>
         </div>
       )}
@@ -453,11 +638,5 @@ const estadoBoton = (activo, primario = false) => ({
   cursor: 'pointer',
   fontWeight: activo || primario ? 'bold' : '500'
 });
-
-const btnSmall = {
-  background: 'var(--bg-secondary)', color: 'var(--text-secondary)',
-  border: '1px solid var(--border)', borderRadius: '10px',
-  padding: '6px 10px', fontSize: '12px', cursor: 'pointer'
-};
 
 export default Home;

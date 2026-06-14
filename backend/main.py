@@ -10,7 +10,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-from models import get_db, crear_tablas, Usuario, RetoLectura
+from models import get_db, crear_tablas, Usuario, RetoLectura, Reseña, Libro
 from agents.vibe_agent import VibeAgent
 from agents.recommender_agent import RecommenderAgent
 from agents.librarian_agent import LibrarianAgent
@@ -32,7 +32,8 @@ app.add_middleware(
 # --- AUTH ---
 SECRET_KEY = os.getenv("SECRET_KEY", "novelia_secret")
 ALGORITHM = "HS256"
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 only to avoid bcrypt backend compatibility issues in the current environment
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 class UsuarioRegistro(BaseModel):
@@ -116,6 +117,8 @@ def obtener_usuario_actual(token: str = Depends(oauth2_scheme), db: Session = De
 def registro(datos: UsuarioRegistro, db: Session = Depends(get_db)):
     if db.query(Usuario).filter(Usuario.username == datos.username).first():
         raise HTTPException(status_code=400, detail="Username ya existe")
+    if db.query(Usuario).filter(Usuario.email == datos.email).first():
+        raise HTTPException(status_code=400, detail="Email ya registrado")
     usuario = Usuario(
         username=datos.username,
         email=datos.email,
@@ -243,6 +246,37 @@ def libros_populares(usuario=Depends(obtener_usuario_actual), db: Session = Depe
     try:
         agente = RecommenderAgent(db)
         return agente.libros_populares()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/libros/buscar")
+def buscar_libros(q: str, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    try:
+        agente = RecommenderAgent(db)
+        libros = agente.buscar_libros_por_termino(q, max_results=8)
+        if not libros:
+            libros = agente._fallback_libros([], [q])
+        return {"libros": libros, "query": q}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/resenas")
+def obtener_resenas(usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    try:
+        reseñas = db.query(Reseña).filter(Reseña.usuario_id == usuario.id).all()
+        resultado = []
+        for reseña in reseñas:
+            libro = db.query(Libro).filter(Libro.id == reseña.libro_id).first()
+            resultado.append({
+                "libro_id": reseña.libro_id,
+                "titulo": libro.titulo if libro else "Título desconocido",
+                "autor": libro.autor if libro else "Autor desconocido",
+                "calificacion": reseña.calificacion,
+                "texto": reseña.texto,
+                "fecha": reseña.fecha.isoformat(),
+                "portada_url": libro.portada_url if libro else ""
+            })
+        return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

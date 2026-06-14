@@ -1,5 +1,6 @@
 import os
 import re
+import random
 import requests
 from dotenv import load_dotenv
 
@@ -61,7 +62,8 @@ class RecommenderAgent:
 
     def obtener_libros_con_gemini(self, generos: list, tags: list) -> list:
         if not client:
-            return self._fallback_libros(generos, tags)
+            libros = self.buscar_libros_openlibrary(generos, tags, max_results=5)
+            return libros if libros else self._fallback_libros(generos, tags)
 
         prompt = f"""
         Recomienda 5 libros modernos, populares y conversados en BookTok/Bookstagram publicados después del 2015.
@@ -83,7 +85,8 @@ class RecommenderAgent:
             text = re.sub(r"```json|```", "", text).strip()
             libros_raw = json.loads(text)
         except Exception:
-            return self._fallback_libros(generos, tags)
+            libros = self.buscar_libros_openlibrary(generos, tags, max_results=5)
+            return libros if libros else self._fallback_libros(generos, tags)
 
         libros = []
         for i, libro in enumerate(libros_raw):
@@ -101,6 +104,50 @@ class RecommenderAgent:
             })
         return libros
 
+    def buscar_libros_openlibrary(self, generos: list, tags: list, max_results: int = 8) -> list:
+        query_parts = []
+        if generos:
+            query_parts.append(" ".join(generos[:3]))
+        if tags:
+            query_parts.append(" ".join(tags[:5]))
+        query = " ".join(query_parts).strip() or "popular books"
+
+        params = {
+            "q": query,
+            "fields": "title,author_name,cover_i,subject,first_publish_year,edition_key",
+            "limit": max_results * 2,
+        }
+        try:
+            response = requests.get(self.open_library_url, params=params, timeout=20)
+            data = response.json()
+            docs = data.get("docs", [])
+            libros = []
+            for doc in docs:
+                titulo = doc.get("title") or "Título desconocido"
+                autores = doc.get("author_name") or ["Autor desconocido"]
+                autor = autores[0]
+                genero = ", ".join([g for g in doc.get("subject", [])[:2]]) if doc.get("subject") else generos[0] if generos else "Ficción"
+                portada = ""
+                if doc.get("cover_i"):
+                    portada = f"https://covers.openlibrary.org/b/id/{doc['cover_i']}-M.jpg"
+                libro_id = doc.get("edition_key", [None])[0] or f"ol_{titulo.replace(' ', '_')}_{autor.replace(' ', '_')}"
+                libros.append({
+                    "id": libro_id,
+                    "titulo": titulo,
+                    "autor": autor,
+                    "descripcion": f"Lectura recomendada basada en {', '.join(generos[:2])} y el mood detectado.",
+                    "portada_url": portada,
+                    "genero": genero,
+                    "tags": ", ".join(tags)
+                })
+                if len(libros) >= max_results:
+                    break
+            if libros:
+                return libros
+        except Exception:
+            pass
+        return []
+
     def buscar_portada(self, titulo: str, autor: str) -> str:
         try:
             params = {"q": f"{titulo} {autor}", "limit": 1, "fields": "cover_i"}
@@ -114,6 +161,113 @@ class RecommenderAgent:
             pass
         return ""
 
+    def normalizar_query(self, termino: str) -> str:
+        termino = termino.strip().lower()
+        termino = termino.replace('&', ' ').replace('/', ' ').replace('-', ' ')
+        termino = termino.replace('darkromance', 'dark romance')
+        termino = termino.replace('romántico', 'romantico').replace('misterioso', 'misterioso')
+        termino = re.sub(r'\s+', ' ', termino)
+        return termino
+
+    def _query_param_for_termino(self, termino: str) -> dict:
+        termino = termino.lower()
+        if any(word in termino for word in ["dark romance", "darkromance", "oscuro", "oscura", "gótico", "gotico", "gothic"]):
+            return {"subject": "dark romance"}
+        if any(word in termino for word in ["cozy", "acogedor", "acogedora", "cálido", "calido", "hogareño", "hogareno", "comfortable"]):
+            return {"subject": "cozy"}
+        if any(word in termino for word in ["misterioso", "misterio", "thriller", "suspense"]):
+            return {"subject": "mystery"}
+        if any(word in termino for word in ["romántico", "romantico", "amor", "romance"]):
+            return {"subject": "romance"}
+        if any(word in termino for word in ["aventura", "aventurero", "aventurera", "fantasía", "fantasia", "fantasy"]):
+            return {"q": "fantasy adventure"}
+        return {"q": termino}
+
+    def buscar_libros_por_termino(self, termino: str, max_results: int = 8) -> list:
+        termino_normalizado = self.normalizar_query(termino)
+        search_params = self._query_param_for_termino(termino_normalizado)
+        params = {
+            **search_params,
+            "fields": "title,author_name,cover_i,subject,edition_key",
+            "limit": max_results * 2,
+        }
+        try:
+            response = requests.get(self.open_library_url, params=params, timeout=20)
+            data = response.json()
+            docs = data.get("docs", [])
+            libros = []
+            vistos = set()
+            for doc in docs:
+                titulo = doc.get("title") or termino
+                autores = doc.get("author_name") or ["Autor desconocido"]
+                autor = autores[0]
+                genero = ", ".join([g for g in doc.get("subject", [])[:2]]) if doc.get("subject") else "Ficción"
+                portada = ""
+                if doc.get("cover_i"):
+                    portada = f"https://covers.openlibrary.org/b/id/{doc['cover_i']}-M.jpg"
+                libro_id = (doc.get("edition_key", [None])[0] or f"ol_{titulo.replace(' ', '_')}_{autor.replace(' ', '_')}")
+                if libro_id in vistos:
+                    continue
+                vistos.add(libro_id)
+                libros.append({
+                    "id": libro_id,
+                    "titulo": titulo,
+                    "autor": autor,
+                    "descripcion": f"Lectura recomendada basada en '{termino_normalizado}'.",
+                    "portada_url": portada,
+                    "genero": genero,
+                    "tags": search_params.get("subject") or search_params.get("q")
+                })
+                if len(libros) >= max_results:
+                    break
+            if libros:
+                return libros
+
+            if search_params.get("subject"):
+                fallback_params = {
+                    "q": termino_normalizado,
+                    "fields": "title,author_name,cover_i,subject,edition_key",
+                    "limit": max_results * 2,
+                }
+                response = requests.get(self.open_library_url, params=fallback_params, timeout=20)
+                data = response.json()
+                docs = data.get("docs", [])
+                for doc in docs:
+                    titulo = doc.get("title") or termino
+                    autores = doc.get("author_name") or ["Autor desconocido"]
+                    autor = autores[0]
+                    genero = ", ".join([g for g in doc.get("subject", [])[:2]]) if doc.get("subject") else "Ficción"
+                    portada = ""
+                    if doc.get("cover_i"):
+                        portada = f"https://covers.openlibrary.org/b/id/{doc['cover_i']}-M.jpg"
+                    libro_id = (doc.get("edition_key", [None])[0] or f"ol_{titulo.replace(' ', '_')}_{autor.replace(' ', '_')}")
+                    if libro_id in vistos:
+                        continue
+                    vistos.add(libro_id)
+                    libros.append({
+                        "id": libro_id,
+                        "titulo": titulo,
+                        "autor": autor,
+                        "descripcion": f"Lectura recomendada basada en '{termino_normalizado}'.",
+                        "portada_url": portada,
+                        "genero": genero,
+                        "tags": termino_normalizado
+                    })
+                    if len(libros) >= max_results:
+                        break
+                if libros:
+                    return libros
+
+            if (search_params.get("q") or termino_normalizado) != termino_normalizado:
+                return self.buscar_libros_por_termino(termino_normalizado, max_results=max_results)
+            return []
+        except Exception:
+            return []
+
+    def buscar_libro_por_texto(self, termino: str) -> dict:
+        libros = self.buscar_libros_por_termino(termino, max_results=1)
+        return libros[0] if libros else {}
+
     def _fallback_libros(self, generos: list, tags: list) -> list:
         base = [
             {"titulo": "Fourth Wing", "autor": "Rebecca Yarros", "descripcion": "Fantasía de ritmo ágil, tensión romántica y mucha conversación en comunidades lectoras modernas.", "genero": "fantasy"},
@@ -121,10 +275,16 @@ class RecommenderAgent:
             {"titulo": "The Seven Husbands of Evelyn Hugo", "autor": "Taylor Jenkins Reid", "descripcion": "Drama moderno, glamour y una protagonista inolvidable con gran impacto social.", "genero": "literary fiction"},
             {"titulo": "A Good Girl's Guide to Murder", "autor": "Holly Jackson", "descripcion": "Misterio juvenil con pistas claras, ritmo alto y una investigación que engancha.", "genero": "mystery"},
             {"titulo": "Book Lovers", "autor": "Emily Henry", "descripcion": "Romance inteligente sobre libros, editoriales y segundas oportunidades.", "genero": "contemporary romance"},
+            {"titulo": "Tomorrow, and Tomorrow, and Tomorrow", "autor": "Gabrielle Zevin", "descripcion": "Una novela moderna sobre amistad, creatividad y el impacto emocional de los juegos.", "genero": "literary fiction"},
+            {"titulo": "The Atlas Six", "autor": "Olivie Blake", "descripcion": "Fantasía oscura con magia, traición y un grupo de personajes muy comentado en redes.", "genero": "fantasy"},
+            {"titulo": "The Maidens", "autor": "Alex Michaelides", "descripcion": "Thriller psicológico con misterio académico y giros intensos.", "genero": "mystery"},
+            {"titulo": "The House in the Cerulean Sea", "autor": "TJ Klune", "descripcion": "Fantasía contemporánea y cálida sobre familia encontrada y magia amable.", "genero": "fantasy"},
+            {"titulo": "The Light Between Oceans", "autor": "M.L. Stedman", "descripcion": "Drama evocador sobre amor, responsabilidad y decisiones difíciles en una isla solitaria.", "genero": "literary fiction"},
         ]
 
+        random.shuffle(base)
         libros = []
-        for i, libro in enumerate(base):
+        for i, libro in enumerate(base[:7]):
             portada = self.buscar_portada(libro["titulo"], libro["autor"])
             libros.append({
                 "id": f"fallback_{i}_{libro['titulo'].replace(' ', '_')}",
@@ -143,10 +303,13 @@ class RecommenderAgent:
             {"titulo": "Book Lovers", "autor": "Emily Henry", "descripcion": "Romance actual con humor y química, tendencia en comunidades de lectura modernas.", "genero": "romance"},
             {"titulo": "Tomorrow, and Tomorrow, and Tomorrow", "autor": "Gabrielle Zevin", "descripcion": "Novela sobre amistad, creatividad y la cultura gamer, muy comentada en BookTok.", "genero": "literary fiction"},
             {"titulo": "The Atlas Six", "autor": "Olivie Blake", "descripcion": "Fantasía oscura con magia y tensión, uno de los títulos más buscados por lectores jóvenes.", "genero": "fantasy"},
-            {"titulo": "People We Meet on Vacation", "autor": "Emily Henry", "descripcion": "Romance divertido y emotivo, con gran recepción en comunidades lectoras actuales.", "genero": "romance"},
+            {"titulo": "The Maidens", "autor": "Alex Michaelides", "descripcion": "Thriller psicológico con un misterio académico muy comentado.", "genero": "mystery"},
+            {"titulo": "The House in the Cerulean Sea", "autor": "TJ Klune", "descripcion": "Fantasía contemporánea y cálida sobre familia encontrada y magia amable.", "genero": "fantasy"},
+            {"titulo": "Crying in H Mart", "autor": "Michelle Zauner", "descripcion": "Memorias modernas y emotivas sobre identidad, familia y música.", "genero": "memoir"},
         ]
+        random.shuffle(recomendados)
         libros = []
-        for i, libro in enumerate(recomendados):
+        for i, libro in enumerate(recomendados[:6]):
             portada = self.buscar_portada(libro["titulo"], libro["autor"])
             libros.append({
                 "id": f"popular_{i}_{libro['titulo'].replace(' ', '_')}",

@@ -1,25 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import API from '../config';
 
 const vibes = [
-  { label: 'Cozy', color: '#8B6914' },
-  { label: 'Nostálgica', color: '#7D4E2D' },
-  { label: 'Misteriosa', color: '#3D3560' },
-  { label: 'Romántica', color: '#7D2D3F' },
-  { label: 'Aventurera', color: '#2D5A3F' },
-  { label: 'Oscura', color: '#2D2D2D' },
-  { label: 'Esperanzadora', color: '#6B5A2D' },
-  { label: 'Melancólica', color: '#2D4A6B' },
+  { label: 'Cozy', emoji: '☕', color: '#8B6914' },
+  { label: 'Nostálgica', emoji: '🍁', color: '#7D4E2D' },
+  { label: 'Misteriosa', emoji: '🕯️', color: '#3D3560' },
+  { label: 'Romántica', emoji: '💘', color: '#7D2D3F' },
+  { label: 'Aventurera', emoji: '🗺️', color: '#2D5A3F' },
+  { label: 'Oscura', emoji: '🌑', color: '#2D2D2D' },
+  { label: 'Esperanzadora', emoji: '🌤️', color: '#6B5A2D' },
+  { label: 'Melancólica', emoji: '🌧️', color: '#2D4A6B' },
 ];
 
 const generos = [
-  { label: 'Fantasía' },
-  { label: 'Romance' },
-  { label: 'Ficción' },
-  { label: 'Misterio' },
-  { label: 'Terror' },
-  { label: 'Sci-Fi' },
+  { label: 'Fantasía', emoji: '🧙' },
+  { label: 'Romance', emoji: '💘' },
+  { label: 'Ficción', emoji: '📚' },
+  { label: 'Misterio', emoji: '🕵️' },
+  { label: 'Terror', emoji: '👻' },
+  { label: 'Sci-Fi', emoji: '🚀' },
 ];
 
 const Search = () => {
@@ -31,17 +31,11 @@ const Search = () => {
   const [libroSeleccionado, setLibroSeleccionado] = useState(null);
   const [vibeActivo, setVibeActivo] = useState(null);
   const [estadosGuardados, setEstadosGuardados] = useState({});
-  const [bibliotecaCargando, setBibliotecaCargando] = useState(true);
 
   const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
-  useEffect(() => {
-    cargarEstadosBiblioteca();
-  }, []);
-
-  const cargarEstadosBiblioteca = async () => {
-    setBibliotecaCargando(true);
+  const cargarEstadosBiblioteca = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/biblioteca`, { headers });
       const estados = {};
@@ -52,22 +46,26 @@ const Search = () => {
     } catch (e) {
       console.error(e);
     }
-    setBibliotecaCargando(false);
-  };
+  }, [headers]);
+
+  useEffect(() => {
+    cargarEstadosBiblioteca();
+  }, [cargarEstadosBiblioteca]);
 
   const buscar = async (texto) => {
     setCargando(true);
     setResultados([]);
     setAnalisisVibe(null);
     try {
-      const res = await axios.post(`${API}/vibe/texto`, { texto }, { headers });
-      setResultados(res.data.recomendaciones?.libros || []);
+      const res = await axios.get(`${API}/libros/buscar`, { headers, params: { q: texto } });
+      const libros = res.data?.libros || [];
+      setResultados(libros);
       setAnalisisVibe({
-        vibe: res.data.vibe?.vibe,
-        tags: res.data.vibe?.tags || [],
-        explicacion: res.data.explicacion?.explicacion || res.data.recomendaciones?.explicacion || '',
-        inferencias: res.data.recomendaciones?.inferencias || [],
-        total: res.data.explicacion?.total_recomendaciones || res.data.recomendaciones?.libros?.length || 0,
+        vibe: texto,
+        tags: [texto],
+        explicacion: `Busqué títulos relacionados con '${texto}' y ordené resultados que coinciden con ese género o mood.`,
+        inferencias: [`Se priorizaron libros cercanos al término '${texto}'.`],
+        total: libros.length,
       });
     } catch (e) {
       console.error(e);

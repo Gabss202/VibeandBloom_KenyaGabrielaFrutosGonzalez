@@ -363,6 +363,22 @@ def chat_libros(datos: ChatLibros, usuario=Depends(obtener_usuario_actual), db: 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/biblioteca/{libro_id}")
+def eliminar_de_biblioteca(libro_id: str, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    try:
+        from models import Biblioteca
+        entrada = db.query(Biblioteca).filter(
+            Biblioteca.usuario_id == usuario.id,
+            Biblioteca.libro_id == libro_id
+        ).first()
+        if not entrada:
+            raise HTTPException(status_code=404, detail="Libro no encontrado en tu biblioteca")
+        db.delete(entrada)
+        db.commit()
+        return {"mensaje": "Libro eliminado de tu biblioteca"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 def root():
     return {"mensaje": "Novelia API funcionando 🎉"}

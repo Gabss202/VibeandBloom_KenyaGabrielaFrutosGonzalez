@@ -2,7 +2,7 @@ from google import genai
 import os
 from datetime import date, datetime
 from dotenv import load_dotenv
-from models import ActividadLectura, Biblioteca, Reseña, SesionVibe
+from models import ActividadLectura, Biblioteca, Reseña, SesionVibe, RetoLectura
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -163,6 +163,22 @@ class SupervisorAgent:
 
         if not dias_actividad:
             inferencias_perfil.append("Aún no hay actividad suficiente para calcular racha de lectura")
+
+        retos_usuario = [
+            {
+                "id": reto.id,
+                "titulo": reto.titulo,
+                "descripcion": reto.descripcion,
+                "progreso": reto.progreso,
+                "objetivo": reto.objetivo,
+                "es_sistema": bool(reto.es_sistema)
+            }
+            for reto in self.db.query(RetoLectura).filter(RetoLectura.usuario_id == usuario_id).order_by(RetoLectura.fecha_creacion.desc()).all()
+        ]
+
+        if retos_usuario:
+            retos.extend(retos_usuario)
+
         return {
             "estadisticas": {
                 "libros_leidos": len(leidos),

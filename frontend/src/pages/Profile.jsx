@@ -5,7 +5,11 @@ import API from '../config';
 
 const Profile = () => {
   const [resumen, setResumen] = useState(null);
+  const [retos, setRetos] = useState([]);
+  const [nuevoReto, setNuevoReto] = useState({ titulo: '', descripcion: '', progreso: 0 });
+  const [editando, setEditando] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [cargandoRetos, setCargandoRetos] = useState(true);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
@@ -14,6 +18,7 @@ const Profile = () => {
 
   useEffect(() => {
     cargarResumen();
+    cargarRetos();
   }, []);
 
   const cargarResumen = async () => {
@@ -24,6 +29,49 @@ const Profile = () => {
       console.error(e);
     }
     setCargando(false);
+  };
+
+  const cargarRetos = async () => {
+    setCargandoRetos(true);
+    try {
+      const res = await axios.get(`${API}/retos`, { headers });
+      setRetos(res.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setCargandoRetos(false);
+  };
+
+  const guardarReto = async () => {
+    if (!nuevoReto.titulo.trim() || !nuevoReto.descripcion.trim()) return;
+    try {
+      if (editando) {
+        await axios.patch(`${API}/retos/${editando.id}`, nuevoReto, { headers });
+      } else {
+        await axios.post(`${API}/retos`, nuevoReto, { headers });
+      }
+      setNuevoReto({ titulo: '', descripcion: '', progreso: 0 });
+      setEditando(null);
+      cargarRetos();
+      cargarResumen();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const editarReto = (reto) => {
+    setEditando(reto);
+    setNuevoReto({ titulo: reto.titulo, descripcion: reto.descripcion, progreso: reto.progreso });
+  };
+
+  const eliminarReto = async (id) => {
+    try {
+      await axios.delete(`${API}/retos/${id}`, { headers });
+      cargarRetos();
+      cargarResumen();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const cerrarSesion = () => {
@@ -172,10 +220,10 @@ const Profile = () => {
             border: '1px solid var(--border)'
           }}>
             <p style={{ fontWeight: 'bold', marginBottom: '14px', color: 'var(--accent)', fontSize: '14px' }}>
-              🏆 Retos de lectura
+              Retos de lectura
             </p>
-            {resumen.retos.map((reto, indice) => (
-              <div key={reto.titulo} style={{ marginBottom: indice < resumen.retos.length - 1 ? '14px' : '0' }}>
+            {(resumen.retos || []).map((reto, indice) => (
+              <div key={reto.titulo} style={{ marginBottom: indice < (resumen.retos || []).length - 1 ? '14px' : '0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <p style={{ fontSize: '13px', fontWeight: '600' }}>{reto.titulo}</p>
                   <p style={{ color: 'var(--accent)', fontSize: '12px', fontWeight: 'bold' }}>{reto.progreso}%</p>
@@ -186,6 +234,72 @@ const Profile = () => {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div style={{
+            background: 'var(--bg-card)', borderRadius: '18px',
+            padding: '18px', marginBottom: '14px',
+            border: '1px solid var(--border)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <p style={{ fontWeight: 'bold', fontSize: '14px' }}>Gestionar retos</p>
+              <button onClick={() => { setEditando(null); setNuevoReto({ titulo: '', descripcion: '', progreso: 0 }); }} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '12px' }}>
+                Nuevo reto
+              </button>
+            </div>
+            {cargandoRetos ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando retos...</p>
+            ) : retos.length ? (
+              retos.map(reto => (
+                <div key={reto.id} style={{ marginBottom: '12px', padding: '12px', background: 'var(--bg-modal)', borderRadius: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
+                    <div>
+                      <p style={{ fontSize: '13px', fontWeight: '600' }}>{reto.titulo}</p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>{reto.descripcion}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--accent)' }}>{reto.progreso}%</p>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                        <button onClick={() => editarReto(reto)} style={actionButton}>Editar</button>
+                        <button onClick={() => eliminarReto(reto.id)} style={deleteButton}>Borrar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Aún no tienes retos personalizados. Agrégalos aquí.</p>
+            )}
+
+            <div style={{ marginTop: '18px', display: 'grid', gap: '10px' }}>
+              <input
+                placeholder="Título del reto"
+                value={nuevoReto.titulo}
+                onChange={e => setNuevoReto({ ...nuevoReto, titulo: e.target.value })}
+                style={inputStyle}
+              />
+              <textarea
+                placeholder="Descripción del reto"
+                rows={3}
+                value={nuevoReto.descripcion}
+                onChange={e => setNuevoReto({ ...nuevoReto, descripcion: e.target.value })}
+                style={{ ...inputStyle, resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={nuevoReto.progreso}
+                  onChange={e => setNuevoReto({ ...nuevoReto, progreso: Number(e.target.value) })}
+                  style={{ ...inputStyle, width: '100px' }}
+                />
+                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Progreso %</span>
+              </div>
+              <button onClick={guardarReto} style={btnStyle}>
+                {editando ? 'Guardar cambios' : 'Agregar reto'}
+              </button>
+            </div>
           </div>
 
           {resumen.actividad_reciente?.length > 0 && (
@@ -302,6 +416,30 @@ const Profile = () => {
       </button>
     </div>
   );
+};
+
+const inputStyle = {
+  background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+  borderRadius: '12px', padding: '12px 14px',
+  color: 'var(--text-primary)', fontSize: '14px', outline: 'none', width: '100%'
+};
+
+const btnStyle = {
+  background: 'var(--accent)', color: 'var(--bg-primary)',
+  border: 'none', borderRadius: '14px', padding: '14px',
+  fontSize: '15px', fontWeight: 'bold', cursor: 'pointer'
+};
+
+const actionButton = {
+  background: 'var(--bg-secondary)', color: 'var(--text-primary)',
+  border: '1px solid var(--border)', borderRadius: '12px',
+  padding: '8px 10px', fontSize: '12px', cursor: 'pointer'
+};
+
+const deleteButton = {
+  background: 'transparent', color: '#c0635a',
+  border: '1px solid #c0635a', borderRadius: '12px',
+  padding: '8px 10px', fontSize: '12px', cursor: 'pointer'
 };
 
 export default Profile;

@@ -137,6 +137,28 @@ class RecommenderAgent:
             })
         return libros
 
+    def libros_populares(self) -> list:
+        recomendados = [
+            {"titulo": "It Ends With Us", "autor": "Colleen Hoover", "descripcion": "Romance contemporáneo muy popular en BookTok con una historia intensa y emotiva.", "genero": "romance"},
+            {"titulo": "The Atlas Six", "autor": "Olivie Blake", "descripcion": "Fantasía oscura y sofisticada que ha sido tendencia en comunidades lectora.", "genero": "fantasy"},
+            {"titulo": "People We Meet on Vacation", "autor": "Emily Henry", "descripcion": "Romance ligero con humor y química que sigue siendo un favorito actual.", "genero": "romance"},
+            {"titulo": "The Maid", "autor": "Nita Prose", "descripcion": "Misterio accesible con gran atractivo social y un personaje principal inolvidable.", "genero": "mystery"},
+            {"titulo": "Tomorrow, and Tomorrow, and Tomorrow", "autor": "Gabrielle Zevin", "descripcion": "Novela moderna sobre amistad, amor y creación de videojuegos.", "genero": "literary fiction"},
+        ]
+        libros = []
+        for i, libro in enumerate(recomendados):
+            portada = self.buscar_portada(libro["titulo"], libro["autor"])
+            libros.append({
+                "id": f"popular_{i}_{libro['titulo'].replace(' ', '_')}",
+                "titulo": libro["titulo"],
+                "autor": libro["autor"],
+                "descripcion": libro["descripcion"],
+                "portada_url": portada,
+                "genero": libro["genero"],
+                "tags": libro["genero"]
+            })
+        return libros
+
     def recomendar(self, usuario_id: int, vibe_data: dict) -> dict:
         from models import Biblioteca
 

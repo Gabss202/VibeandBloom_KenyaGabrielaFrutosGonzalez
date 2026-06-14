@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { HiMusicalNote, HiVideoCamera, HiPhoto, HiSparkles } from 'react-icons/hi2';
 import API from '../config';
@@ -14,6 +14,8 @@ const Home = () => {
   const [mensajeGuardado, setMensajeGuardado] = useState('');
   const [libroSeleccionado, setLibroSeleccionado] = useState(null);
   const [estadosGuardados, setEstadosGuardados] = useState({});
+  const [populares, setPopulares] = useState([]);
+  const [popularesCargando, setPopularesCargando] = useState(true);
   const [chatMensajes, setChatMensajes] = useState([
     { role: 'assistant', text: 'Soy Novelia. Puedo recomendarte libros modernos, explicar mis inferencias y ayudarte a elegir tu próxima lectura.' }
   ]);
@@ -23,6 +25,21 @@ const Home = () => {
   const token = localStorage.getItem('token');
   const username = localStorage.getItem('username');
   const headers = { Authorization: `Bearer ${token}` };
+
+  useEffect(() => {
+    cargarPopulares();
+  }, []);
+
+  const cargarPopulares = async () => {
+    setPopularesCargando(true);
+    try {
+      const res = await axios.get(`${API}/libros/populares`, { headers });
+      setPopulares(res.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setPopularesCargando(false);
+  };
 
   const detectarVibe = async () => {
     setCargando(true);
@@ -90,8 +107,37 @@ const Home = () => {
   return (
     <div style={{ padding: '24px 16px 100px', maxWidth: '480px', margin: '0 auto' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '28px', fontWeight: 'bold' }}>Hola, {username} 👋</h2>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '4px' }}>¿Qué vibes buscas hoy?</p>
+        <h2 style={{ fontSize: '28px', fontWeight: 'bold' }}>Hola, {username}</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '4px' }}>¿Qué buscas hoy para tu próxima lectura?</p>
+      </div>
+
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <p style={{ fontSize: '16px', fontWeight: '700' }}>Más vendidos</p>
+          <button onClick={cargarPopulares} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '13px' }}>Actualizar</button>
+        </div>
+        {popularesCargando ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Cargando libros populares...</p>
+        ) : populares.length ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px' }}>
+            {populares.slice(0, 4).map(libro => (
+              <div key={libro.id} style={{ background: 'var(--bg-card)', borderRadius: '18px', padding: '14px', border: '1px solid var(--border)' }}>
+                <p style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '6px', lineHeight: '1.3' }}>{libro.titulo}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '10px' }}>{libro.autor}</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button onClick={() => agregarBiblioteca(libro, 'quiero_leer')} style={estadoBoton(estadosGuardados[libro.id] === 'quiero_leer')}>
+                    Quiero leer
+                  </button>
+                  <button onClick={() => agregarBiblioteca(libro, 'leyendo')} style={estadoBoton(estadosGuardados[libro.id] === 'leyendo')}>
+                    Leyendo
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No hay libros populares disponibles.</p>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>

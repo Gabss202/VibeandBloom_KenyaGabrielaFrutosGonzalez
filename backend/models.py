@@ -3,11 +3,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./novelia.db")
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'novelia.db'}")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -25,6 +26,7 @@ class Usuario(Base):
     biblioteca = relationship("Biblioteca", back_populates="usuario")
     reseñas = relationship("Reseña", back_populates="usuario")
     actividades = relationship("ActividadLectura", back_populates="usuario")
+    retos = relationship("RetoLectura", back_populates="usuario", cascade="all, delete-orphan")
 
 class Libro(Base):
     __tablename__ = "libros"
@@ -78,6 +80,18 @@ class ActividadLectura(Base):
     puntos = Column(Integer, default=1)
     fecha = Column(DateTime, default=datetime.utcnow)
     usuario = relationship("Usuario", back_populates="actividades")
+
+class RetoLectura(Base):
+    __tablename__ = "retos_lectura"
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    titulo = Column(String)
+    descripcion = Column(Text)
+    progreso = Column(Integer, default=0)
+    objetivo = Column(String, default="Completar")
+    es_sistema = Column(Integer, default=0)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    usuario = relationship("Usuario", back_populates="retos")
 
 
 def get_db():

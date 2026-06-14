@@ -10,7 +10,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 
-from models import get_db, crear_tablas, Usuario
+from models import get_db, crear_tablas, Usuario, RetoLectura
 from agents.vibe_agent import VibeAgent
 from agents.recommender_agent import RecommenderAgent
 from agents.librarian_agent import LibrarianAgent
@@ -78,6 +78,20 @@ class ChatLibros(BaseModel):
 class RecuperarPassword(BaseModel):
     identificador: str
     nueva_password: str
+
+class RetoLecturaBase(BaseModel):
+    titulo: str
+    descripcion: str
+    progreso: int
+
+class RetoLecturaCrear(RetoLecturaBase):
+    pass
+
+class RetoLecturaActualizar(BaseModel):
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    progreso: Optional[int] = None
+
 
 def crear_token(data: dict):
     datos = data.copy()
@@ -223,6 +237,80 @@ def escribir_resena(datos: EscribirResena, usuario=Depends(obtener_usuario_actua
         return agente.escribir_reseña(usuario.id, datos.libro_id, datos.calificacion, datos.texto)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/libros/populares")
+def libros_populares(usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    try:
+        agente = RecommenderAgent(db)
+        return agente.libros_populares()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/retos")
+def obtener_retos(usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    retos = db.query(RetoLectura).filter(RetoLectura.usuario_id == usuario.id).order_by(RetoLectura.fecha_creacion.desc()).all()
+    return [
+        {
+            "id": reto.id,
+            "titulo": reto.titulo,
+            "descripcion": reto.descripcion,
+            "progreso": reto.progreso,
+            "objetivo": reto.objetivo,
+            "es_sistema": bool(reto.es_sistema)
+        }
+        for reto in retos
+    ]
+
+@app.post("/retos")
+def crear_reto(datos: RetoLecturaCrear, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    reto = RetoLectura(
+        usuario_id=usuario.id,
+        titulo=datos.titulo,
+        descripcion=datos.descripcion,
+        progreso=max(0, min(100, datos.progreso)),
+        objetivo="Personalizado",
+        es_sistema=0
+    )
+    db.add(reto)
+    db.commit()
+    return {"mensaje": "Reto agregado", "reto": {
+        "id": reto.id,
+        "titulo": reto.titulo,
+        "descripcion": reto.descripcion,
+        "progreso": reto.progreso,
+        "objetivo": reto.objetivo,
+        "es_sistema": False
+    }}
+
+@app.patch("/retos/{reto_id}")
+def actualizar_reto(reto_id: int, datos: RetoLecturaActualizar, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    reto = db.query(RetoLectura).filter(RetoLectura.id == reto_id, RetoLectura.usuario_id == usuario.id).first()
+    if not reto:
+        raise HTTPException(status_code=404, detail="Reto no encontrado")
+    if datos.titulo is not None:
+        reto.titulo = datos.titulo
+    if datos.descripcion is not None:
+        reto.descripcion = datos.descripcion
+    if datos.progreso is not None:
+        reto.progreso = max(0, min(100, datos.progreso))
+    db.commit()
+    return {"mensaje": "Reto actualizado", "reto": {
+        "id": reto.id,
+        "titulo": reto.titulo,
+        "descripcion": reto.descripcion,
+        "progreso": reto.progreso,
+        "objetivo": reto.objetivo,
+        "es_sistema": bool(reto.es_sistema)
+    }}
+
+@app.delete("/retos/{reto_id}")
+def eliminar_reto(reto_id: int, usuario=Depends(obtener_usuario_actual), db: Session = Depends(get_db)):
+    reto = db.query(RetoLectura).filter(RetoLectura.id == reto_id, RetoLectura.usuario_id == usuario.id).first()
+    if not reto:
+        raise HTTPException(status_code=404, detail="Reto no encontrado")
+    db.delete(reto)
+    db.commit()
+    return {"mensaje": "Reto eliminado"}
 
 # --- PERFIL (Agente 4) ---
 @app.get("/perfil/resumen")
